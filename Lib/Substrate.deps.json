@@ -1,0 +1,57 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v6.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v6.0": {
+      "Substrate/1.0.0": {
+        "dependencies": {
+          "Aspose.Drawing": "22.7.0",
+          "Ionic.Zlib.Core": "1.0.0"
+        },
+        "runtime": {
+          "Substrate.dll": {}
+        }
+      },
+      "Aspose.Drawing/22.7.0": {
+        "runtime": {
+          "lib/netstandard2.0/Aspose.Drawing.dll": {
+            "assemblyVersion": "22.7.0.0",
+            "fileVersion": "22.7.0.0"
+          }
+        }
+      },
+      "Ionic.Zlib.Core/1.0.0": {
+        "runtime": {
+          "lib/netstandard2.0/Ionic.Zlib.Core.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Substrate/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Aspose.Drawing/22.7.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-igZfPqt03JKMtCHL5apdp+wWQLHGzLqV0+G+0yD761hQARAsHU48l/pEXS6spAEOgdGdop/j3EDTCeo/RLkPNg==",
+      "path": "aspose.drawing/22.7.0",
+      "hashPath": "aspose.drawing.22.7.0.nupkg.sha512"
+    },
+    "Ionic.Zlib.Core/1.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-3GBgjMQA/uPTiqv+wMCpLsyK5dcHCF6EV8+pg4IMKLbgbMGEtIkvErEO4ql5Cv18n94Smf3NAhY/sCed2Tb+Tw==",
+      "path": "ionic.zlib.core/1.0.0",
+      "hashPath": "ionic.zlib.core.1.0.0.nupkg.sha512"
+    }
+  }
+}
