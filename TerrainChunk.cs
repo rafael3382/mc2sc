@@ -152,8 +152,8 @@ namespace Game
 		            }
 		            
 		            SetBottomHeightFast(x, z, 0);
-		            SetTemperatureFast(x, z, 12);
-		            SetHumidityFast(x, z, 12);
+		            SetTemperatureFast(x, z, 15);
+		            SetHumidityFast(x, z, 15);
 		        }
 		    }
 		}

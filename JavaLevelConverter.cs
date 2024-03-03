@@ -1,11 +1,12 @@
 using System;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Diagnostics;
 using Engine;
 using Substrate;
 using Substrate.Nbt;
 using Substrate.Core;
-using System.IO;
+using System.IO; 
 using System.Collections.Generic;
 using Game;
 
@@ -53,8 +54,68 @@ public class JavaLevelConverter
         NbtTree tree = Nbt(Path.Combine(WorldPath, "level.dat"));
         Data = ((TagNodeCompound) tree.Root).GetCompound("Data", false);
         project = projectSerializer;
+        LoadTranslationDictionary();
     }
-    
+
+    public void LoadTranslationDictionary()
+    {
+        string hr2idJson = new StreamReader(typeof(JavaLevelConverter).Assembly.GetManifestResourceStream("WorldConverter.HumanReadable2Id.json")).ReadToEnd();
+        string translationDictionaryJson = File.ReadAllText("BlockTranslation.json");
+        var hr2id = JsonSerializer.Deserialize<Dictionary<string, int>>(hr2idJson);
+        var translationDictionary = JsonSerializer.Deserialize<Dictionary<string, string>>(translationDictionaryJson);
+        string[] colorNames = Enum.GetNames(typeof(SCColor));
+        foreach (KeyValuePair<string, string> pair in translationDictionary)
+        {
+            if (pair.Value == "NoTranslation")
+                continue;
+            var match = Regex.Match(pair.Value, "([a-zA-Z]+)(?::([0-9]+))?(?: #([a-zA-Z_]+))?");
+            if (!match.Success)
+            {
+                Console.WriteLine($"Error processing translation value \"{pair.Value}\". Skipping.");
+                continue;
+            }
+            var groups = match.Groups.Values;
+            int blockId = 0;
+            string blockName;
+            if (match.Groups.Count > 1)
+                blockName = match.Groups[1].Value;
+            else
+                blockName = match.Groups[0].Value;
+            try
+            {
+                blockId = hr2id[blockName];
+            }
+            catch
+            {
+                Console.WriteLine($"Warning: Couldn't translate the block name \"{blockName}\" to an id. Skipping.");
+                continue;
+            }
+
+            SCColor? blockColor = null;
+            int blockData = 0;
+            if (match.Groups.Count > 1)
+            {
+                string obtainedColorName = groups.FirstOrDefault((group) => colorNames.Contains(group.Value))?.Value; // Get the first group that is NOT a number
+                if (colorNames.Contains(obtainedColorName))
+                    blockColor = Enum.Parse<SCColor>(obtainedColorName, true);
+                //else if (!string.IsNullOrEmpty(obtainedColorName))
+                //    Console.WriteLine($"Warning: Could not identify the color \"{obtainedColorName}\" in the translation value \"{pair.Value}\". Ignoring.");
+                string obtainedBlockData = groups.FirstOrDefault((group) => int.TryParse(group.Value, out _))?.Value; // Get the first group that IS a number.
+                if (obtainedBlockData != null)
+                    blockData = int.Parse(obtainedBlockData);
+            }
+            if (blockColor.HasValue)
+            {
+                if (blockName.Contains("Stairs"))
+                    blockData = PaintStair(blockData, blockColor.Value);
+                else
+                    blockData = Paint(blockData, blockColor.Value);
+            }
+            BlockTranslator[pair.Key] = Terrain.MakeBlockValue(blockId, 0, blockData);
+        }
+        Console.ReadKey();
+    }
+
     public void Convert()
     {
         SetupGameInfo();
@@ -179,11 +240,13 @@ public class JavaLevelConverter
             Console.Write(blockName + ", ");
         }
         Console.WriteLine();
+        //Console.ReadKey();
     }
     
     private double processDuration_sum = 0.0;
     private double processDuration_count = 0.0;
     public int processingThreadCount = 0;
+    public bool validRegionsFound = false;
     
     public void ConvertRegion(string regionName, TerrainSerializer23 terrainSerializer)
     {
@@ -228,7 +291,7 @@ public class JavaLevelConverter
                      int sectionY = (int) section.GetByte("Y", 64);
                      if (sectionY < 0 || sectionY > 15 || block_states == null || paletteNode == null || !block_states.ContainsKey("data"))
                          continue;
-                     
+                        validRegionsFound = true;
                      long[] blocks = block_states["data"].ToTagLongArray().Data;
                      
                      List<int> palette = new List<int>();
@@ -505,11 +568,10 @@ public class JavaLevelConverter
     
     
     // Block data utils
-    public static int Paint(int block, SCColor color)
+    public static int Paint(int data, SCColor color)
     {
-        int data = Terrain.ExtractData(block);
         data = (data & -32) | 1 | (((int) color) << 1);
-        return Terrain.ReplaceData(block, data);
+        return data;
     }
     
     
@@ -545,9 +607,9 @@ public class JavaLevelConverter
         return Terrain.ReplaceData(block, Terrain.ExtractData(block) & -5);
     }
     
-    public static int PaintStair(int block, SCColor color)
+    public static int PaintStair(int data, SCColor color)
 	{
-		return Terrain.ReplaceData(block, (Terrain.ExtractData(block) & -993) | 0x20 | (((int) color & 0xF) << 6));
+		return (data & -993) | 0x20 | (((int) color & 0xF) << 6);
 	}
     
     
@@ -595,435 +657,6 @@ public class JavaLevelConverter
 	    Gamepads,
 	    All
     }
-    
-    public static Dictionary<string,int> BlockTranslator = new Dictionary<string,int>()
-    {
-        {"minecraft:air", 0},
-        { "minecraft:stone", 3},
-        { "minecraft:diorite", 3},
-        { "minecraft:granite", 3},
-        { "minecraft:deepslate", 67},
-        { "minecraft:grass", 19},
-        { "minecraft:grass_block", 8},
-        { "minecraft:dirt", 2},
-        { "minecraft:cobblestone", 5},
-        { "minecraft:mossy_cobblestone", 5},
-        { "minecraft:wood_plank", 21},
-        { "minecraft:bedrock", 1},
-        { "minecraft:water", 18},
-        { "minecraft:stationary_water", 18},
-        { "minecraft:lava", 92},
-        { "minecraft:stationary_lava", 92},
-        { "minecraft:sand", 7},
-        { "minecraft:gravel", 6},
-        { "minecraft:oak_log", 9},
-        { "minecraft:birch_log", 10},
-        { "minecraft:spruce_log", 11},
-        { "minecraft:dark_oak_log", 11},
-        { "minecraft:jungle_log", 11},
-        { "minecraft:oak_leaves", 12},
-        { "minecraft:birch_leaves", 13},
-        { "minecraft:spruce_leaves", 14},
-        { "minecraft:dark_oak_leaves", 14},
-        { "minecraft:jungle_leaves", 12},
-        { "minecraft:leaves", 12},
-        { "minecraft:sponge", 72},
-        { "minecraft:glass", 15},
-        { "minecraft:dispenser", 216},
-        { "minecraft:sandstone", 4},
-        { "minecraft:note_block", 183},
-        { "minecraft:bed", 55},
-        { "minecraft:sticky_piston", 237},
-        { "minecraft:tall_grass", 19},
-        { "minecraft:piston", 237},
-        { "minecraft:piston_head", 238},
-        { "minecraft:gold_block", 47},
-        { "minecraft:iron_block", 46},
-        { "minecraft:oak_slab", 55},
-        { "minecraft:birch_slab", 55},
-        { "minecraft:dark_oak_slab", Paint(55, SCColor.Brown)},
-        { "minecraft:stone_slab", 53},
-        { "minecraft:smooth_stone_slab", 54},
-        { "minecraft:quartz_slab", 70},
-        { "minecraft:brick_block", 73},
-        { "minecraft:brick_wall", 73 },
-        { "minecraft:tnt", 107},
-        { "minecraft:obsidian", Paint(72, SCColor.Black)},
-        { "minecraft:torch", 31},
-        { "minecraft:wall_torch", 31},
-        { "minecraft:fire", 104},
-        { "minecraft:chest", 45},
-        { "minecraft:redstone_wire", 276613},
-        { "minecraft:diamond_block", 126},
-        { "minecraft:crafting_table", 27},
-        { "minecraft:crops", 119},
-        { "minecraft:farmland", 168},
-        { "minecraft:furnace", 64},
-        { "minecraft:burning_furnace", 65},
-        { "minecraft:sign_post", 97},
-        { "minecraft:ladder", 59},
-        { "minecraft:wall_sign", 98},
-        { "minecraft:lever", 141},
-        { "minecraft:stone_plate", 144},
-        { "minecraft:iron_door", 57},
-        { "minecraft:wood_plate", 144},
-        { "minecraft:snow", 61},
-        { "minecraft:ice", 62},
-        { "minecraft:snow_block", Paint(72, SCColor.White) },
-        { "minecraft:cactus", 127},
-        { "minecraft:jack_o_lantern", 132},
-        { "minecraft:redstone_repeater_off", 145},
-        { "minecraft:redstone_repeater_on", 145},
-        { "minecraft:locked_chest", 21},
-        { "minecraft:trapdoor", 83},
-        { "minecraft:iron_bars", 193 },
-        { "minecraft:vine", 197},
-        { "minecraft:fence_gate", 166},
-        { "minecraft:end_portal_frame", 4},
-        { "minecraft:redstone_lamp_off", 231},
-        { "minecraft:redstone_lamp_on", 17},
-        { "minecraft:command_block", 186},
-        { "minecraft:wood_button", 142},
-        { "minecraft:trapped_chest", 45},
-        { "minecraft:light_weighted_pressure_plate", 144},
-        { "minecraft:weighted_pressure_plate_heavy", 144},
-        { "minecraft:redstone_comparator_inactive", 186},
-        { "minecraft:redstone_comparator_active", 186},
-        { "minecraft:daylight_sensor", 151},
-        { "minecraft:carpet", 208},
-        { "minecraft:iron_ore", 39},
-        { "minecraft:coal_ore", 16},
-        { "minecraft:redstone_ore", 148},
-        { "minecraft:diamond_ore", 112},
-        {"minecraft:gold_ore", 3},
-        { "minecraft:coal_block", 150},
-        { "minecraft:acacia_fence", 0},
-        { "minecraft:acacia_planks", 21},
-        { "minecraft:acacia_stairs", 49},
-        { "minecraft:azure_bluet", 0},
-        { "minecraft:bookshelf", 0},
-        { "minecraft:brick_stairs", 0},
-        { "minecraft:bricks", 73},
-        { "minecraft:carrots", 0},
-        { "minecraft:clay", 0},
-        { "minecraft:cobblestone_stairs", 0},
-        { "minecraft:cobblestone_wall", 0},
-        { "minecraft:cobweb", 0},
-        { "minecraft:dandelion", 0},
-        { "minecraft:dark_oak_stairs", 0},
-        { "minecraft:emerald_ore", 0},
-        { "minecraft:fern", 0},
-        { "minecraft:glass_pane", 0},
-        { "minecraft:glowstone", 17},
-        { "minecraft:infested_stone", 0},
-        { "minecraft:lapis_ore", 3},
-        { "minecraft:lilac", 0},
-        { "minecraft:oak_door", 56},
-        { "minecraft:oak_fence", 94},
-        { "minecraft:oak_planks", 21},
-        { "minecraft:oak_stairs", 49 },
-        { "minecraft:oak_wall_sign", 98},
-        { "minecraft:oxeye_daisy", 0},
-        { "minecraft:peony", 0},
-        { "minecraft:poppy", 0},
-        { "minecraft:potatoes", 0},
-        { "minecraft:pumpkin", 131},
-        { "minecraft:quartz_block", 68},
-        { "minecraft:quartz_stairs", 69},
-        { "minecraft:spruce_planks", 21},
-        { "minecraft:stone_bricks", 26},
-        { "minecraft:wheat", 174},
-        { "minecraft:white_wool", Paint(4, SCColor.White) },
-        { "minecraft:orange_wool", Paint(4, SCColor.Red) },
-        { "minecraft:magenta_wool", Paint(4, SCColor.Pink) },
-        { "minecraft:light_blue_wool", Paint(4, SCColor.Pale_Blue) },
-        { "minecraft:yellow_wool", Paint(4, SCColor.Yellow) },
-        { "minecraft:lime_wool", Paint(4, SCColor.Pale_Green) },
-        { "minecraft:pink_wool", Paint(4, SCColor.Pink) },
-        { "minecraft:gray_wool", Paint(4, SCColor.Gray) },
-        { "minecraft:light_gray_wool", Paint(4, SCColor.Light_Gray) },
-        { "minecraft:cyan_wool", Paint(4, SCColor.Cyan) },
-        { "minecraft:purple_wool", Paint(4, SCColor.Purple) },
-        { "minecraft:blue_wool", Paint(4, SCColor.Blue) },
-        { "minecraft:brown_wool", Paint(4, SCColor.Brown) },
-        { "minecraft:green_wool", Paint(4, SCColor.Green) },
-        { "minecraft:red_wool", Paint(4, SCColor.Red) },
-        { "minecraft:black_wool", Paint(4, SCColor.Black) },
-        { "minecraft:white_concrete", Paint(72, SCColor.White) },
-        { "minecraft:orange_concrete", Paint(72, SCColor.Red) },
-        { "minecraft:magenta_concrete", Paint(72, SCColor.Pink) },
-        { "minecraft:light_blue_concrete", Paint(72, SCColor.Pale_Blue) },
-        { "minecraft:yellow_concrete", Paint(72, SCColor.Yellow) },
-        { "minecraft:lime_concrete", Paint(72, SCColor.Pale_Green) },
-        { "minecraft:pink_concrete", Paint(72, SCColor.Pink) },
-        { "minecraft:gray_concrete", Paint(72, SCColor.Gray) },
-        { "minecraft:light_gray_concrete", Paint(72, SCColor.Light_Gray) },
-        { "minecraft:cyan_concrete", Paint(72, SCColor.Cyan) },
-        { "minecraft:purple_concrete", Paint(72, SCColor.Purple) },
-        { "minecraft:blue_concrete", Paint(72, SCColor.Blue) },
-        { "minecraft:brown_concrete", Paint(72, SCColor.Brown) },
-        { "minecraft:green_concrete", Paint(72, SCColor.Green) },
-        { "minecraft:red_concrete", Paint(72, SCColor.Red) },
-        { "minecraft:black_concrete", Paint(72, SCColor.Black) },
-        { "minecraft:white_carpet", Paint(208, SCColor.White) },
-        { "minecraft:orange_carpet", Paint(208, SCColor.Red) },
-        { "minecraft:magenta_carpet", Paint(208, SCColor.Pink) },
-        { "minecraft:light_blue_carpet", Paint(208, SCColor.Pale_Blue) },
-        { "minecraft:yellow_carpet", Paint(208, SCColor.Yellow) },
-        { "minecraft:lime_carpet", Paint(208, SCColor.Pale_Green) },
-        { "minecraft:pink_carpet", Paint(208, SCColor.Pink) },
-        { "minecraft:gray_carpet", Paint(208, SCColor.Gray) },
-        { "minecraft:light_gray_carpet", Paint(208, SCColor.Light_Gray) },
-        { "minecraft:cyan_carpet", Paint(208, SCColor.Cyan) },
-        { "minecraft:purple_carpet", Paint(208, SCColor.Purple) },
-        { "minecraft:blue_carpet", Paint(208, SCColor.Blue) },
-        { "minecraft:brown_carpet", Paint(208, SCColor.Brown) },
-        { "minecraft:green_carpet", Paint(208, SCColor.Green) },
-        { "minecraft:red_carpet", Paint(208, SCColor.Red) },
-        { "minecraft:black_carpet", Paint(208, SCColor.Black) },
-        { "minecraft:white_stained_glass", 15 },
-        { "minecraft:orange_stained_glass", 15 },
-        { "minecraft:magenta_stained_glass", 15 },
-        { "minecraft:light_blue_stained_glass", 15 },
-        { "minecraft:yellow_stained_glass", 15 },
-        { "minecraft:lime_stained_glass", 15 },
-        { "minecraft:pink_stained_glass", 15 },
-        { "minecraft:gray_stained_glass", 15 },
-        { "minecraft:light_gray_stained_glass", 15 },
-        { "minecraft:cyan_stained_glass", 15 },
-        { "minecraft:purple_stained_glass", 15 },
-        { "minecraft:blue_stained_glass", 15 },
-        { "minecraft:brown_stained_glass", 15 },
-        { "minecraft:green_stained_glass", 15 },
-        { "minecraft:red_stained_glass", 15 },
-        { "minecraft:black_stained_glass", 15 },
-        { "minecraft:white_bed", Paint(55, SCColor.White) },
-        { "minecraft:orange_bed", Paint(55, SCColor.Red) },
-        { "minecraft:magenta_bed", Paint(55, SCColor.Pink) },
-        { "minecraft:light_blue_bed", Paint(55, SCColor.Pale_Blue) },
-        { "minecraft:yellow_bed", Paint(55, SCColor.Yellow) },
-        { "minecraft:lime_bed", Paint(55, SCColor.Pale_Green) },
-        { "minecraft:pink_bed", Paint(55, SCColor.Pink) },
-        { "minecraft:gray_bed", Paint(55, SCColor.Gray) },
-        { "minecraft:light_gray_bed", Paint(55, SCColor.Light_Gray) },
-        { "minecraft:cyan_bed", Paint(55, SCColor.Cyan) },
-        { "minecraft:purple_bed", Paint(55, SCColor.Purple) },
-        { "minecraft:blue_bed", Paint(55, SCColor.Blue) },
-        { "minecraft:brown_bed", Paint(55, SCColor.Brown) },
-        { "minecraft:green_bed", Paint(55, SCColor.Green) },
-        { "minecraft:red_bed", Paint(55, SCColor.Red) },
-        { "minecraft:black_bed", Paint(55, SCColor.Black) },
-        { "minecraft:white_terracotta", Paint(72, SCColor.White) },
-        { "minecraft:orange_terracotta", Paint(72, SCColor.Red) },
-        { "minecraft:magenta_terracotta", Paint(72, SCColor.Pink) },
-        { "minecraft:light_blue_terracotta", Paint(72, SCColor.Pale_Blue) },
-        { "minecraft:yellow_terracotta", Paint(72, SCColor.Yellow) },
-        { "minecraft:lime_terracotta", Paint(72, SCColor.Pale_Green) },
-        { "minecraft:pink_terracotta", Paint(72, SCColor.Pink) },
-        { "minecraft:gray_terracotta", Paint(72, SCColor.Gray) },
-        { "minecraft:light_gray_terracotta", Paint(72, SCColor.Light_Gray) },
-        { "minecraft:cyan_terracotta", Paint(72, SCColor.Cyan) },
-        { "minecraft:purple_terracotta", Paint(72, SCColor.Purple) },
-        { "minecraft:blue_terracotta", Paint(72, SCColor.Blue) },
-        { "minecraft:brown_terracotta", Paint(72, SCColor.Brown) },
-        { "minecraft:green_terracotta", Paint(72, SCColor.Green) },
-        { "minecraft:red_terracotta", Paint(72, SCColor.Red) },
-        { "minecraft:black_terracotta", Paint(72, SCColor.Black) },
-        { "minecraft:flowering_azalea", 0 },               { "minecraft:acacia_slab", 0 },                    { "minecraft:spruce_slab", 55 },
-        { "minecraft:jungle_slab", 55 },
-        { "minecraft:prismarine_slab", 0 },
-        { "minecraft:dark_prismarine_slab", 0 },
-        { "minecraft:sandstone_slab", 0 },
-        { "minecraft:red_sandstone_slab", 0 },
-        { "minecraft:smooth_sandstone_slab", 0 },
-        { "minecraft:cut_sandstone_slab", 0 },
-        { "minecraft:cobblestone_slab", 0 },
-        { "minecraft:polished_granite_slab", 0 },
-        { "minecraft:polished_diorite_slab", 0 },
-        { "minecraft:andesite_slab", Paint(52, SCColor.Light_Gray) },
-        { "minecraft:petrified_oak_slab", 55 },
-        { "minecraft:brick_slab", 75 },
-        { "minecraft:stone_brick_slab", 54 },
-        { "minecraft:end_stone_brick_slab", Paint(54, SCColor.White) },
-        { "minecraft:end_stone", Paint(95, SCColor.White) },
-        { "minecraft:polished_blackstone_brick_slab", 0 },
-        { "minecraft:deepslate_brick_slab", 0 },
-        { "minecraft:nether_brick_slab", Paint(54, SCColor.Red) },
-        { "minecraft:red_nether_brick_slab", Paint(54, SCColor.Red) },
-        { "minecraft:waxed_oxidized_cut_copper_slab", 0 },
-        { "minecraft:purpur_slab", Paint(54, SCColor.Purple) },
-        { "minecraft:smooth_quartz_slab", 70 },
-        { "minecraft:player_wall_head", 0 },
-        { "minecraft:blue_orchid", 24 },
-        { "minecraft:potted_blue_orchid", 0 },
-        { "minecraft:structure_void", 0 },
-        { "minecraft:brewing_stand", 0 },
-        { "minecraft:jungle_wood", 9 },
-        { "minecraft:oak_wood", 9 },
-        { "minecraft:birch_wood", 10 },
-        { "minecraft:spruce_wood", 9 },
-        { "minecraft:acacia_wood", 9 },
-        { "minecraft:dark_oak_wood", 11 },
-        { "minecraft:stripped_dark_oak_wood", 9 },
-        { "minecraft:end_rod", Paint(163, SCColor.White) },
-        { "minecraft:blast_furnace", 64 },
-        { "minecraft:spruce_fence", 94 },
-        { "minecraft:jungle_fence", 94 },
-        { "minecraft:birch_fence", 94 },
-        { "minecraft:dark_oak_fence", Paint(94, SCColor.Brown) },
-        { "minecraft:nether_brick_fence", 64 },
-        { "minecraft:cake", 0 },
-        { "minecraft:prismarine", Paint(67, SCColor.Purple) },
-        { "minecraft:smooth_stone", 0 },
-        { "minecraft:chiseled_sandstone", 0 },
-        { "minecraft:red_sandstone", 0 },
-        { "minecraft:chiseled_red_sandstone", 0 },
-        { "minecraft:smooth_red_sandstone", 0 },
-        { "minecraft:cut_red_sandstone", 0 },
-        { "minecraft:cut_sandstone", 0 },
-        { "minecraft:lodestone", 0 },
-        { "minecraft:campfire", 209 },
-        { "minecraft:tripwire", 0 },
-        { "minecraft:nether_quartz_ore", 0 },
-        { "minecraft:potted_wither_rose", 0 },
-        { "minecraft:spruce_fence_gate", 0 },
-        { "minecraft:jungle_fence_gate", 0 },
-        { "minecraft:birch_fence_gate", 0 },
-        { "minecraft:oak_fence_gate", 155 },
-        { "minecraft:acacia_pressure_plate", 144 },
-        { "minecraft:heavy_weighted_pressure_plate", 144 },
-        { "minecraft:jungle_pressure_plate", 144 },
-        { "minecraft:stone_pressure_plate", 144 },
-        { "minecraft:oak_pressure_plate", 144 },
-        { "minecraft:chiseled_deepslate", 67 },
-        { "minecraft:polished_andesite", 68 },
-        { "minecraft:acacia_log", 9 },
-        { "minecraft:stripped_acacia_log", 9 },
-        { "minecraft:stripped_spruce_log", 9 },
-        { "minecraft:redstone_torch", 140 },
-        { "minecraft:redstone_wall_torch", 140 },
-        { "minecraft:rose_bush", 0 },
-        { "minecraft:netherrack", Paint(67, SCColor.Red) },
-        { "minecraft:magma_block", Paint(72, SCColor.Red) },
-        { "minecraft:emerald_block", Paint(72, SCColor.Green) },
-        { "minecraft:repeating_command_block", 0 },
-        { "minecraft:slime_block", Paint(72, SCColor.Green) },
-        { "minecraft:redstone_block", 138 },
-        { "minecraft:structure_block", 0 },
-        { "minecraft:netherite_block", 0 },
-        { "minecraft:purpur_block", 0 },
-        { "minecraft:lapis_block", 0 },
-        { "minecraft:chiseled_quartz_block", 0 },
-        { "minecraft:tripwire_hook", 0 },
-        { "minecraft:barrel", 0 },
-        { "minecraft:rail", 0 },
-        { "minecraft:powered_rail", 0 },
-        { "minecraft:detector_rail", 0 },
-        { "minecraft:anvil", 0 },
-        { "minecraft:sandstone_wall", Paint(202, SCColor.Yellow) },
-        { "minecraft:red_sandstone_wall", 4 },
-        { "minecraft:mossy_cobblestone_wall", 0 },
-        { "minecraft:blackstone_wall", Paint(202, SCColor.Black) },
-        { "minecraft:stone_brick_wall", 202 },
-        { "minecraft:mossy_stone_brick_wall", 0 },
-        { "minecraft:polished_blackstone_brick_wall", 0 },
-        { "minecraft:deepslate_brick_wall", 0 },
-        { "minecraft:red_nether_brick_wall", 0 },
-        { "minecraft:podzol", 0 },
-        { "minecraft:spore_blossom", 0 },
-        { "minecraft:mycelium", 8 },
-        { "minecraft:spruce_sign", 97 },
-        { "minecraft:jungle_sign", 97 },
-        { "minecraft:birch_sign", 97 },
-        { "minecraft:oak_sign", 97 },
-        { "minecraft:acacia_wall_sign", 0 },
-        { "minecraft:birch_wall_sign", 0 },
-        { "minecraft:dark_oak_wall_sign", 0 },
-        { "minecraft:beacon", 0 },
-        { "minecraft:cauldron", 0 },
-        { "minecraft:water_cauldron", 0 },
-        { "minecraft:acacia_button", 142 },
-        { "minecraft:spruce_button", 142 },
-        { "minecraft:jungle_button", 142 },
-        { "minecraft:stone_button", 142 },
-        { "minecraft:polished_blackstone_button", 142 },
-        { "minecraft:birch_button", 142 },
-        { "minecraft:oak_button", 142 },
-        { "minecraft:dark_oak_button", 142 },
-        { "minecraft:large_fern", 0 }, 
-        { "minecraft:lantern", 17 },
-        { "minecraft:sea_lantern", 17 },
-        { "minecraft:soul_lantern", 17 },
-        { "minecraft:kelp", 232 },
-        { "minecraft:redstone_lamp", 0 },
-        { "minecraft:quartz_pillar", 68 },
-        { "minecraft:barrier", 0 },
-        { "minecraft:smoker", 0 },
-        { "minecraft:oxidized_cut_copper", 0 },
-        { "minecraft:waxed_oxidized_cut_copper", 0 },
-        { "minecraft:hopper", 0 },
-        { "minecraft:dropper", 0 },
-        { "minecraft:repeater", 224 },
-        { "minecraft:composter", 0 },
-        { "minecraft:cornflower", 0 },
-        { "minecraft:sunflower", 0 },
-        { "minecraft:respawn_anchor", 0 },
-        { "minecraft:acacia_door", 56 },
-        { "minecraft:spruce_door", 56 },
-        { "minecraft:jungle_door", 56 },
-        { "minecraft:birch_door", 56 },
-        { "minecraft:dark_oak_door", 56 },
-        { "minecraft:acacia_trapdoor", 83 },
-        { "minecraft:jungle_trapdoor", 83 },
-        { "minecraft:birch_trapdoor", 83 },
-        { "minecraft:oak_trapdoor", 83 },
-        { "minecraft:dark_oak_trapdoor", 83 },
-        { "minecraft:iron_trapdoor", 84 },
-        { "minecraft:comparator", 186 },
-        { "minecraft:daylight_detector", 151 },
-        { "minecraft:azalea_leaves", 12 },
-        { "minecraft:flowering_azalea_leaves", 12 },
-        { "minecraft:acacia_leaves", 12 },
-        { "minecraft:cracked_stone_bricks", 26 },
-        { "minecraft:chiseled_stone_bricks", 26 },
-        { "minecraft:end_stone_bricks", Paint(26, SCColor.White) },
-        { "minecraft:mossy_stone_bricks", 26 },
-        { "minecraft:polished_blackstone_bricks", Paint(26, SCColor.Black) },
-        { "minecraft:deepslate_bricks", Paint(26, SCColor.Black) },
-        { "minecraft:nether_bricks", Paint(26, SCColor.Red) },
-        { "minecraft:red_nether_bricks", Paint(26, SCColor.Red) },
-        { "minecraft:quartz_bricks", 68 },
-        { "minecraft:jungle_planks", 21 },
-        { "minecraft:birch_planks", 21 },
-        { "minecraft:dark_oak_planks", Paint(21, SCColor.Brown) },
-        { "minecraft:warped_stairs", PaintStair(49, SCColor.Cyan) },
-        { "minecraft:spruce_stairs", 49 },
-        { "minecraft:jungle_stairs", 49 },
-        { "minecraft:deepslate_tile_stairs", 96 },
-        { "minecraft:prismarine_stairs", PaintStair(96, SCColor.Cyan) },
-        { "minecraft:dark_prismarine_stairs", PaintStair(96, SCColor.Cyan) },
-        { "minecraft:stone_stairs", 48 },
-        { "minecraft:sandstone_stairs", 51 },
-        { "minecraft:smooth_sandstone_stairs", 51 },
-        { "minecraft:mossy_cobblestone_stairs", 48 },
-        { "minecraft:polished_blackstone_stairs", PaintStair(48, SCColor.Black) },
-        { "minecraft:polished_diorite_stairs", PaintStair(48, SCColor.White) },
-        { "minecraft:polished_andesite_stairs", PaintStair(96, SCColor.Light_Gray) },
-        { "minecraft:birch_stairs", 55 },
-        { "minecraft:stone_brick_stairs", 50 },
-        { "minecraft:mossy_stone_brick_stairs", 217 },
-        { "minecraft:polished_blackstone_brick_stairs", 0 },
-        { "minecraft:nether_brick_stairs", PaintStair(50, SCColor.Red) },
-        { "minecraft:red_nether_brick_stairs", PaintStair(50, SCColor.Red) },
-        { "minecraft:crimson_stairs", PaintStair(50, SCColor.Red) },
-        { "minecraft:waxed_oxidized_cut_copper_stairs", PaintStair(69, SCColor.Red) },
-        { "minecraft:purpur_stairs", PaintStair(69, SCColor.Purple) },
-        { "minecraft:smooth_quartz_stairs", 69 },
-        { "minecraft:seagrass", 233 },
-        { "minecraft:kelp_plant", 232 },
-        { "minecraft:flower_pot", 0 },
-        { "minecraft:rooted_dirt", 2 },
-        { "minecraft:coarse_dirt", 2 },
-        { "minecraft:ender_chest", 45 }
-    };
+
+    public static Dictionary<string, int> BlockTranslator = new Dictionary<string, int>();
 }

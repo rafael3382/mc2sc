@@ -13,6 +13,8 @@ static class Program
     {
         if (args.Length < 1) {
             Console.WriteLine("Usage: Converter.exe <minecraft world>");
+            Console.WriteLine("Or drag the world folder to the executable.");
+            Console.ReadKey();
             return;
         }
         
@@ -21,6 +23,7 @@ static class Program
         if (!File.Exists(Path.Combine(src, "level.dat")))
         {
             Console.WriteLine("Not a valid Minecraft world. `level.dat` not found.");
+            Console.ReadKey();
             return;
         }
         
@@ -43,13 +46,16 @@ static class Program
         }
         else
         {
-            Console.WriteLine("Bedrock worlds aren't supported yet.");
+            Console.WriteLine("Bedrock worlds aren't supported yet. Convert using Chunker.");
+            Console.ReadKey();
             return;
         }
         sc_project.Save("tmp_sc/Project.xml");
         
         CompressFiles("tmp_sc", "Result.scworld");
         Directory.Delete("tmp_sc/", true);
+        Console.WriteLine("Operation completed. Check Result.scworld.");
+        Console.ReadKey();
     }
     
     public static void DebugTree(TagNodeCompound root, string start="")
